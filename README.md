@@ -9,6 +9,14 @@ This repository adapts the Swin Transformer architecture for astrophotography im
 - Restoring fine details in celestial objects
 - Preserving natural color balance
 
+## Examples
+
+1. NGC4565 (Needle Galaxy)
+<img src="https://github.com/user-attachments/assets/b9f7f166-0305-4a1a-8a15-86f6b7cc583a" title="NGC4565 Needle Galaxy" width="500px">
+
+2. NGC3031 Bode's Galaxy
+<img src="https://github.com/user-attachments/assets/8d4643bc-8717-4458-9769-a4899c6ad134" title="NGC3031 Bode's Galaxy" width="500px">
+
 ## Contents
 
 The repository includes five core notebooks:
