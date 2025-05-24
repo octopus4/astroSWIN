@@ -1,0 +1,4 @@
+{
+    "APP_PATH": "run_aswin.exe",
+    "MODEL_PATH": "aswin_onnx_v0_6"
+}
