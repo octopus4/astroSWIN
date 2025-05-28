@@ -2,28 +2,48 @@
 #feature-info AstroSWIN processor for enhancement and sharpening
 
 #include <pjsr/Sizer.jsh>
+#include <pjsr/NumericControl.jsh>
 
 var pxTempDirPath = "pixinsight_tmp";
 var pxTempInputName = "pixinsight_tmp_input.tiff";
 var pxTempOutputName = "pixinsight_tmp_output.tiff";
 var defaultSampleBits = 16;
 
+var configAppProperty = "APP_PATH";
+var configModelsProperty = "MODELS";
+
 var aswinPath = File.homeDirectory + "/AppData/Local/aswin";
 
-function AstroSWINEngine() {
+function AstroSWINEngine(config, params) {
     // many thanks to GraXpert opensourced code
-
     this.process = new ExternalProcess();
-    this.config = JSON.parse(File.readTextFile(aswinPath + "/config.json"));
+    this.config = config;
+    this.blendingParamToKey = {
+        " --patch-size ": "patchSize",
+        " --beta ": "maskBeta",
+        " --const ": "maskConst",
+        " --mul ": "maskMul"
+    };
+    this.params = params;
 
     this.execute = function (inputPath, outputPath) {
-        let appPath = aswinPath + "/" + this.config["APP_PATH"];
-        let modelPath = aswinPath + "/" + this.config["MODEL_PATH"];
+        let appPath = aswinPath + "/" + this.config[configAppProperty];
+        let modelPath = aswinPath + "/" + this.params["selectedModel"];
 
         command = appPath;
         command += " -i " + inputPath;
         command += " -o " + outputPath;
         command += " -m " + modelPath;
+
+        if (this.params["doBlending"]) {
+            let blendingParamNames = Object.keys(this.blendingParamToKey);
+            for (let i = 0; i < blendingParamNames.length; ++i) {
+                let paramName = blendingParamNames[i];
+                let paramKey = this.blendingParamToKey[paramName];
+                command += paramName + this.params[paramKey];
+            }
+        }
+        Console.writeln(command);
 
         this.process.start(command);
         if (!this.process.waitForStarted(10000)) {
@@ -54,20 +74,70 @@ function HFProcessorDialog() {
     this.__base__();
 
     this.windowTitle = "AstroSWIN";
-    this.minHeight = 50;
-    this.maxHeight = 50;
-    this.minWidth = 400;
-    this.maxWidth = 400;
+    this.minHeight = 250;
+    this.maxHeight = 250;
+    this.minWidth = 300;
+    this.maxWidth = 300;
     this.processingStarted = false;
 
-    var comboBox = new ComboBox(this);
     var windows = ImageWindow.windows;
+    var config = JSON.parse(File.readTextFile(aswinPath + "/config.json"));
 
-    comboBox.addItem("Select Image");
+    var viewsComboBox = new ComboBox(this);
+    viewsComboBox.addItem("Select Image");
     for (let i = 0; i < windows.length; ++i) {
-        comboBox.addItem(windows[i].mainView.id);
+        viewsComboBox.addItem(windows[i].mainView.id);
     }
-    comboBox.currentItem = 0;
+    viewsComboBox.currentItem = 0;
+
+    var modelsComboBox = new ComboBox(this);
+    modelsComboBox.addItem("Select Model");
+    for (let i = 0; i < config[configModelsProperty].length; ++i) {
+        modelsComboBox.addItem(config[configModelsProperty][i]);
+    }
+    modelsComboBox.currentItem = 0;
+
+    var patchSizeSelector = new NumericControl(this);
+    patchSizeSelector.setReal(false);
+    patchSizeSelector.setRange(8, 64);
+    patchSizeSelector.setValue(32);
+    patchSizeSelector.text = "Blending patch size";
+
+    var maskBetaSelector = new NumericControl(this);
+    maskBetaSelector.setReal(true);
+    maskBetaSelector.setRange(0, 1);
+    maskBetaSelector.setPrecision(3);
+    maskBetaSelector.setValue(0.05);
+    maskBetaSelector.text = "Blending mask beta param";
+
+    var maskConstSelector = new NumericControl(this);
+    maskConstSelector.setReal(true);
+    maskConstSelector.setRange(0, 1);
+    maskConstSelector.setPrecision(3);
+    maskConstSelector.setValue(0);
+    maskConstSelector.text = "Blending mask const param";
+
+    var maskMulSelector = new NumericControl(this);
+    maskMulSelector.setReal(true);
+    maskMulSelector.setRange(0, 1);
+    maskMulSelector.setPrecision(3);
+    maskMulSelector.setValue(1);
+    maskMulSelector.text = "Blending mask multiplication param";
+
+    var blendingControls = [
+        patchSizeSelector,
+        maskBetaSelector,
+        maskConstSelector,
+        maskMulSelector
+    ];
+    var blendingCheckBox = new CheckBox(this);
+    blendingCheckBox.text = "Perform auto-blending after processing";
+    blendingCheckBox.onCheck = function () {
+        for (let i = 0; i < blendingControls.length; ++i) {
+            blendingControls[i].enabled = this.checked;
+        }
+    }
+    blendingCheckBox.onCheck();
 
     this.processButton = new PushButton(this);
     this.processButton.text = "Process";
@@ -77,7 +147,7 @@ function HFProcessorDialog() {
         }
         this.processingStarted = true;
 
-        let currentItemIndex = comboBox.currentItem - 1;
+        let currentItemIndex = viewsComboBox.currentItem - 1;
         if (currentItemIndex < 0) {
             new MessageBox("No view selected!", "Error").execute();
             return;
@@ -98,11 +168,20 @@ function HFProcessorDialog() {
                 Console.writeln("Created tmp dir");
             }
 
-            selectedWindow.saveAs(inputPath, queryOptions=false);
+            selectedWindow.saveAs(inputPath, false, false, false, false);
             Console.writeln("Image saved to:", inputPath);
 
             Console.writeln("Executing astro swin");
-            let astroSwin = new AstroSWINEngine();
+            let params = {
+                selectedModel: config[configModelsProperty][modelsComboBox.currentItem - 1],
+                doBlending: blendingCheckBox.checked,
+                patchSize: patchSizeSelector.value,
+                maskBeta: maskBetaSelector.value,
+                maskConst: maskConstSelector.value,
+                maskMul: maskMulSelector.value
+            };
+            Console.writeln(JSON.stringify(params));
+            let astroSwin = new AstroSWINEngine(config, params);
             astroSwin.execute(inputPath, outputPath);
             Console.writeln("External processing completed");
 
@@ -121,12 +200,17 @@ function HFProcessorDialog() {
         this.processingStarted = false;
     };
 
-    this.sizer = new HorizontalSizer(this);
+    this.sizer = new VerticalSizer(this);
     this.sizer.spacing = 8;
     this.sizer.margin = 8;
 
-    this.sizer.add(comboBox);
-    this.sizer.addSpacing(10);
+    this.sizer.add(viewsComboBox);
+    this.sizer.add(modelsComboBox);
+    this.sizer.add(blendingCheckBox);
+    this.sizer.add(patchSizeSelector);
+    this.sizer.add(maskBetaSelector);
+    this.sizer.add(maskConstSelector);
+    this.sizer.add(maskMulSelector);
     this.sizer.add(this.processButton);
 
     this.adjustToContents();
