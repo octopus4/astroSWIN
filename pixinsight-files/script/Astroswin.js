@@ -51,10 +51,11 @@ function AstroSWINEngine(config, params) {
         }
 
         var process = this.process;
-        var totalOutput = "";
         this.process.onStandardOutputDataAvailable = function () {
             let outputLines = process.standardOutput.toString().split("\r\n");
-            Console.writeln(outputLines[0]);
+            if (outputLines.length > 1) {
+                Console.writeln(outputLines[0]);
+            }
             Console.flush();
             processEvents();
         }
