@@ -5,9 +5,7 @@
 
 ## Overview
 
-This repository adapts the Swin Transformer architecture for astrophotography image enhancement, focusing on:  
-- Restoring fine details in celestial objects
-- Preserving natural color balance
+This repository adapts the Swin Transformer architecture for astrophotography image enhancement for joint deconvolution and denoise
 
 ## Examples
 
@@ -25,7 +23,7 @@ The repository includes five core notebooks:
     - `collect_hubble.ipynb`: Downloads Hubble Space Telescope images from [ESA/Hubble](https://esahubble.org/) archives (partial dataset)
 2. Preprocessing
     - `preprocessing.ipynb`: Pipeline to generate 256×256 patches from source images and split them into train/test sets.
-    _Note: Future versions will use 512×512 patches with on-the-fly cropping to reduce overfitting._
+    _Note: Is not necessary for current training pipeline_
 3. Training
     - `train_aswin.ipynb`: Custom training loop with:
         - Loss functions (Brightness Loss, Gradient Loss, Histogram Loss, Adaptive Background Loss)
@@ -36,18 +34,29 @@ The repository includes five core notebooks:
 
 ## Technical limitations
 
+### First iteration (version 0.7)
+
 - Hardware: Trained on NVIDIA GTX 1660Ti Mobile (6GB)
 - Optimizations:
-    - 256×256 patches (tradeoff between VRAM limits and detail preservation)
+    - 256×256 pre-made patches (tradeoff between VRAM limits and detail preservation)
     - Mixed-precision training (fp16)
     - Gradient checkpointing
     - Gradient accumulation steps = 2
+
+### Second iteration (version 1.0)
+
+- Hardware: Trained on Google Colaboratory Tesla T4
+- Optimizations:
+    - Mixed-precision training (fp16)
+    - Gradient checkpointing
+    - Gradient accumulation steps = 4
 
 ## Training process
 
 The training pipeline consists of two major phases:
 1. **Domain Adaptaion** on noisy and heterogeneous-quality data
 2. **Fine-Tuning** on curated high-quality data
+3. **Further tuning** on _bigger_ amount of data with proper loss functions
 
 ### Stage 1: Domain Adaptation
 
@@ -74,7 +83,7 @@ The training pipeline consists of two major phases:
 **Objective:** Balance sharpness and naturalness while mitigating overprocessing.
 **Key Adjustments:**
 - Dataset Curation:
-    - Removed low-quality images from astrobin
+    - Remove low-quality images from astrobin
     - Integrated ESAHubble "Large" images (20% of dataset)
     - Limitations: due to VRAM constraints I pre-generated possibly overlapping patches from every image in the dataset
 - Architectural Changes:
@@ -85,14 +94,29 @@ The training pipeline consists of two major phases:
     - Epoch 6: AHBG-dominated weighting ($\lambda = 1.5$), outcome: smoother backgrounds but undersaturated colors (astroswin_v06)
     - Epoch 7: Histogram-dominated weighting, outcome: natural tones with preserved details (astroswin_v07)
 
+### Stage 3: Error correction
+
+**Objective:** Deal with noisy & crispy background
+**Key Adjustments:**
+- Dataset Extension:
+    - Add more than 2GB of images from ESAHubble library
+    - Add nebulae images from ESAHubble
+    - Tiny split proportion to preserve more data for train
+- Architectural Changes:
+    - Remove masked L1/L2 losses, instead added sharpness-aware loss based on _mix_ of discrete Laplace operator and L1 loss
+    - Add random noise to image during the training process
+    - Add random downsampling for big images so the model could process different scales
+    - Create random combinations of blur functions
+    - Set weights as follows in the training notebook: 2.0 for mixed loss of L1 and laplacian-based, 1.0 for gradient loss, 1.0 for histogram loss
+
 ## Future work
 
-As a continuation, I see mastering the training process:
-- Avoid potential model overfitting using bigger patches at the data preprocessing stage
-- Apply different kinds of noise to image patches
-- Combine various blurry distortions at once
-- Experiment with attention-based masking for star detection
-- Experiment with more accurate loss weights scheduling
+As a follow-up, I am going to parameterize model with deconvolution strength parameter.
+
+## Sources
+
+- [Dataset](https://drive.google.com/file/d/1v1HvfuoQPMprDa5FgRvjRMlwIwt5mp84/view?usp=sharing)
+- [Trained model checkpoint](https://drive.google.com/file/d/1WHKDZhAOKSegPRgYi2iFizky_14mbBht/view?usp=sharing)
 
 ## Acknowledgments
 
