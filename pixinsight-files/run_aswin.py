@@ -2,11 +2,14 @@ import numpy as np
 import onnxruntime as ort
 import sys
 
+from cv2 import imread, imwrite, IMREAD_UNCHANGED
+from cv2.typing import MatLike
 from gc import collect
-from PIL import Image
 from transformers import Swin2SRImageProcessor
 from typing import Optional
 from logging import basicConfig, getLogger, StreamHandler, INFO
+
+_16BIT_SCALE = 65535.0
 
 basicConfig(level=INFO)
 logger = getLogger('astro-swin')
@@ -17,7 +20,7 @@ logger.addHandler(handler)
 def to_pil(v: np.ndarray):
     v = np.clip(v, 0, 1)
     v = np.moveaxis(v, source=0, destination=-1)
-    return (v * 255.0).round().astype(np.uint8)
+    return (v * _16BIT_SCALE).round().astype(np.uint16)
 
 def get_pad_based_size(size: int, window: int, pad: int):
     return (size // (window - pad) + int(size % (window - pad) != 0)) * (window - pad) + pad
@@ -60,7 +63,7 @@ def create_weight_mask(size, overlap):
     return mask
 
 def terminate_blur(
-    image: Image,
+    image: MatLike,
     session: ort.InferenceSession,
     processor: Swin2SRImageProcessor,
     mask_patch_size: Optional[int] = None,
@@ -70,9 +73,11 @@ def terminate_blur(
 ):
     window = 256
     pad = 32
-    pad_based_width, pad_based_height = get_pad_based_size(image.width, window, pad), get_pad_based_size(image.height, window, pad)
+    pad_based_width, pad_based_height = get_pad_based_size(image.shape[1], window, pad), get_pad_based_size(image.shape[0], window, pad)
 
-    img_tensor = processor(image, return_tensors='np').pixel_values
+    img_tensor = processor(
+        image, rescale_factor=1 / _16BIT_SCALE, return_tensors='np'
+    ).pixel_values
     pad_based_img = np.zeros((1, 3, pad_based_height, pad_based_width))
     pad_based_img[:, :, :img_tensor.shape[-2], :img_tensor.shape[-1]] += img_tensor
     target = np.zeros_like(pad_based_img)
@@ -86,21 +91,21 @@ def terminate_blur(
         while y < pad_based_height - pad:
             y_from, y_to = y, y + window
             patch_tensor = pad_based_img[:, :, y_from:y_to, x_from:x_to]
-            outputs = session.run(None, {"pixel_values": patch_tensor.astype(np.float32)})[0]
+            outputs = session.run(None, {"pixel_values": patch_tensor.astype(np.float16)})[0]
             target[:, :, y_from:y_to, x_from:x_to] += outputs * weight_mask
             weight_sum[:, :, y_from:y_to, x_from:x_to] += weight_mask
             y = y_to - pad
         collect()
         x = x_to - pad
         progress = x / pad_based_width
-        logger.info(f'{progress * 100:0.5f}%: [{"|" * int(progress * 10) + " " * int((1 - progress) * 10)}]')
+        logger.info(f'{progress * 100:0.2f}%:\t[{"|" * int(progress * 10) + " " * int((1 - progress) * 10)}]')
     target /= np.clip(weight_sum, a_min=1e-6, a_max=weight_sum.max())
-    processed, base_image = target[0][:, :image.height, :image.width], img_tensor[0][:, :image.height, :image.width]
+    processed, base_image = target[0][:, :image.shape[0], :image.shape[1]], img_tensor[0][:, :image.shape[0], :image.shape[1]]
     if mask_patch_size is None or mask_beta is None or mask_const is None or mask_multiplier is None:
-        return Image.fromarray(to_pil(processed))
+        return to_pil(processed)
     patch_weights = calculate_patch_weights(base_image, patch_size=int(mask_patch_size), beta=float(mask_beta))
     rescaled_weights = np.clip((patch_weights + float(mask_const)) * float(mask_multiplier), a_max=1, a_min=0)
-    return Image.fromarray(to_pil(rescaled_weights * processed + (1 - rescaled_weights) * base_image))
+    return to_pil(rescaled_weights * processed + (1 - rescaled_weights) * base_image)
 
 def process(
     model_path: str,
@@ -124,10 +129,10 @@ def process(
 
     sess = ort.InferenceSession(model_path + '/model.onnx', sess_options=options, providers=providers)
     processor = Swin2SRImageProcessor.from_pretrained(model_path)
-    image = Image.open(image_input_path).convert('RGB')
+    image = imread(image_input_path, IMREAD_UNCHANGED)
 
-    processed = terminate_blur(
-        image,
+    processed_tensor = terminate_blur(
+        image[:, :, ::-1],
         sess,
         processor,
         mask_patch_size=mask_patch_size,
@@ -135,8 +140,7 @@ def process(
         mask_const=mask_const,
         mask_multiplier=mask_multiplier
     )
-    with open(image_output_path, 'wb') as f:
-        processed.save(f)
+    imwrite(image_output_path, processed_tensor[:, :, ::-1])
 
 def parse_args(arg_list: list[str]):
     assert len(arg_list) % 2 == 0
