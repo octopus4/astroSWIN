@@ -5,9 +5,9 @@
 #include <pjsr/NumericControl.jsh>
 
 var pxTempDirPath = "pixinsight_tmp";
-var pxTempInputName = "pixinsight_tmp_input.tiff";
-var pxTempOutputName = "pixinsight_tmp_output.tiff";
-var defaultSampleBits = 16;
+var pxTempInputName = "pixinsight_tmp_input.tif";
+var pxTempOutputName = "pixinsight_tmp_output.tif";
+var defaultSampleBits = 32;
 
 var configAppProperty = "APP_PATH";
 var configModelsProperty = "MODELS";
@@ -155,7 +155,7 @@ function HFProcessorDialog() {
         }
 
         var selectedWindow = ImageWindow.windows[currentItemIndex];
-        selectedWindow.setSampleFormat(defaultSampleBits, floatSample = false);
+        selectedWindow.setSampleFormat(defaultSampleBits, floatSample = true);
 
         try {
             Console.show();

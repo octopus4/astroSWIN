@@ -2,14 +2,13 @@ import numpy as np
 import onnxruntime as ort
 import sys
 
-from cv2 import imread, imwrite, IMREAD_UNCHANGED
+from cv2 import imread, imwrite, IMREAD_UNCHANGED, IMWRITE_TIFF_COMPRESSION
 from cv2.typing import MatLike
 from gc import collect
 from transformers import Swin2SRImageProcessor
 from typing import Optional
 from logging import basicConfig, getLogger, StreamHandler, INFO
 
-_16BIT_SCALE = 65535.0
 
 basicConfig(level=INFO)
 logger = getLogger('astro-swin')
@@ -17,10 +16,18 @@ handler = StreamHandler(sys.stdout)
 logger.addHandler(handler)
 
 
+def auto_stretch(v: np.ndarray, eps: float = 1e-2, g: float = 1.1):
+    scale = (1 + eps) / (v + eps)
+    v_scaled = (v * scale) ** g
+    return v_scaled, scale, g
+
+def unstretch(v: np.ndarray, scale: np.ndarray, g: float) -> np.ndarray:
+    return (v ** (1/g)) / scale
+
 def to_pil(v: np.ndarray):
     v = np.clip(v, 0, 1)
     v = np.moveaxis(v, source=0, destination=-1)
-    return (v * _16BIT_SCALE).round().astype(np.uint16)
+    return v.astype(np.float32)
 
 def get_pad_based_size(size: int, window: int, pad: int):
     return (size // (window - pad) + int(size % (window - pad) != 0)) * (window - pad) + pad
@@ -75,9 +82,7 @@ def terminate_blur(
     pad = 32
     pad_based_width, pad_based_height = get_pad_based_size(image.shape[1], window, pad), get_pad_based_size(image.shape[0], window, pad)
 
-    img_tensor = processor(
-        image, rescale_factor=1 / _16BIT_SCALE, return_tensors='np'
-    ).pixel_values
+    img_tensor = processor(image, do_rescale=False, return_tensors='np').pixel_values
     pad_based_img = np.zeros((1, 3, pad_based_height, pad_based_width))
     pad_based_img[:, :, :img_tensor.shape[-2], :img_tensor.shape[-1]] += img_tensor
     target = np.zeros_like(pad_based_img)
@@ -91,7 +96,7 @@ def terminate_blur(
         while y < pad_based_height - pad:
             y_from, y_to = y, y + window
             patch_tensor = pad_based_img[:, :, y_from:y_to, x_from:x_to]
-            outputs = session.run(None, {"pixel_values": patch_tensor.astype(np.float16)})[0]
+            outputs = session.run(None, {"pixel_values": patch_tensor.astype(np.float32)})[0]
             target[:, :, y_from:y_to, x_from:x_to] += outputs * weight_mask
             weight_sum[:, :, y_from:y_to, x_from:x_to] += weight_mask
             y = y_to - pad
@@ -130,9 +135,10 @@ def process(
     sess = ort.InferenceSession(model_path + '/model.onnx', sess_options=options, providers=providers)
     processor = Swin2SRImageProcessor.from_pretrained(model_path)
     image = imread(image_input_path, IMREAD_UNCHANGED)
+    im_stretched, scale, g = auto_stretch(image)
 
     processed_tensor = terminate_blur(
-        image[:, :, ::-1],
+        im_stretched,
         sess,
         processor,
         mask_patch_size=mask_patch_size,
@@ -140,7 +146,8 @@ def process(
         mask_const=mask_const,
         mask_multiplier=mask_multiplier
     )
-    imwrite(image_output_path, processed_tensor[:, :, ::-1])
+    linear_tensor = unstretch(processed_tensor, scale, g)
+    imwrite(image_output_path, linear_tensor, [IMWRITE_TIFF_COMPRESSION, 0])
 
 def parse_args(arg_list: list[str]):
     assert len(arg_list) % 2 == 0
