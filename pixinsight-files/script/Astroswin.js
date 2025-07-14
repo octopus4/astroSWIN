@@ -18,12 +18,6 @@ function AstroSWINEngine(config, params) {
     // many thanks to GraXpert opensourced code
     this.process = new ExternalProcess();
     this.config = config;
-    this.blendingParamToKey = {
-        " --patch-size ": "patchSize",
-        " --beta ": "maskBeta",
-        " --const ": "maskConst",
-        " --mul ": "maskMul"
-    };
     this.params = params;
 
     this.execute = function (inputPath, outputPath) {
@@ -35,14 +29,6 @@ function AstroSWINEngine(config, params) {
         command += " -o " + outputPath;
         command += " -m " + modelPath;
 
-        if (this.params["doBlending"]) {
-            let blendingParamNames = Object.keys(this.blendingParamToKey);
-            for (let i = 0; i < blendingParamNames.length; ++i) {
-                let paramName = blendingParamNames[i];
-                let paramKey = this.blendingParamToKey[paramName];
-                command += paramName + this.params[paramKey];
-            }
-        }
         Console.writeln(command);
 
         this.process.start(command);
@@ -75,8 +61,8 @@ function HFProcessorDialog() {
     this.__base__();
 
     this.windowTitle = "AstroSWIN";
-    this.minHeight = 250;
-    this.maxHeight = 250;
+    this.minHeight = 90;
+    this.maxHeight = 90;
     this.minWidth = 300;
     this.maxWidth = 300;
     this.processingStarted = false;
@@ -97,48 +83,6 @@ function HFProcessorDialog() {
         modelsComboBox.addItem(config[configModelsProperty][i]);
     }
     modelsComboBox.currentItem = 0;
-
-    var patchSizeSelector = new NumericControl(this);
-    patchSizeSelector.setReal(false);
-    patchSizeSelector.setRange(8, 64);
-    patchSizeSelector.setValue(32);
-    patchSizeSelector.text = "Blending patch size";
-
-    var maskBetaSelector = new NumericControl(this);
-    maskBetaSelector.setReal(true);
-    maskBetaSelector.setRange(0, 1);
-    maskBetaSelector.setPrecision(3);
-    maskBetaSelector.setValue(0.05);
-    maskBetaSelector.text = "Blending mask beta param";
-
-    var maskConstSelector = new NumericControl(this);
-    maskConstSelector.setReal(true);
-    maskConstSelector.setRange(0, 1);
-    maskConstSelector.setPrecision(3);
-    maskConstSelector.setValue(0);
-    maskConstSelector.text = "Blending mask const param";
-
-    var maskMulSelector = new NumericControl(this);
-    maskMulSelector.setReal(true);
-    maskMulSelector.setRange(0, 1);
-    maskMulSelector.setPrecision(3);
-    maskMulSelector.setValue(1);
-    maskMulSelector.text = "Blending mask multiplication param";
-
-    var blendingControls = [
-        patchSizeSelector,
-        maskBetaSelector,
-        maskConstSelector,
-        maskMulSelector
-    ];
-    var blendingCheckBox = new CheckBox(this);
-    blendingCheckBox.text = "Perform auto-blending after processing";
-    blendingCheckBox.onCheck = function () {
-        for (let i = 0; i < blendingControls.length; ++i) {
-            blendingControls[i].enabled = this.checked;
-        }
-    }
-    blendingCheckBox.onCheck();
 
     this.processButton = new PushButton(this);
     this.processButton.text = "Process";
@@ -174,14 +118,8 @@ function HFProcessorDialog() {
 
             Console.writeln("Executing astro swin");
             let params = {
-                selectedModel: config[configModelsProperty][modelsComboBox.currentItem - 1],
-                doBlending: blendingCheckBox.checked,
-                patchSize: patchSizeSelector.value,
-                maskBeta: maskBetaSelector.value,
-                maskConst: maskConstSelector.value,
-                maskMul: maskMulSelector.value
+                selectedModel: config[configModelsProperty][modelsComboBox.currentItem - 1]
             };
-            Console.writeln(JSON.stringify(params));
             let astroSwin = new AstroSWINEngine(config, params);
             astroSwin.execute(inputPath, outputPath);
             Console.writeln("External processing completed");
@@ -207,11 +145,6 @@ function HFProcessorDialog() {
 
     this.sizer.add(viewsComboBox);
     this.sizer.add(modelsComboBox);
-    this.sizer.add(blendingCheckBox);
-    this.sizer.add(patchSizeSelector);
-    this.sizer.add(maskBetaSelector);
-    this.sizer.add(maskConstSelector);
-    this.sizer.add(maskMulSelector);
     this.sizer.add(this.processButton);
 
     this.adjustToContents();
