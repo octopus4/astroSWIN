@@ -17,24 +17,18 @@ This repository adapts the Swin Transformer architecture for astrophotography im
 
 ## Contents
 
-The repository includes five core notebooks:
-1. Data Collection
-    - `collect_astrobin_data.ipynb`: Fetches "Image of the Day" archive (IOTD's) from [AstroBin](https://www.astrobin.com/) in jpeg format for efficiency
-    - `collect_hubble.ipynb`: Downloads Hubble Space Telescope images from [ESA/Hubble](https://esahubble.org/) archives (partial dataset)
-2. Preprocessing
-    - `preprocessing.ipynb`: Pipeline to generate 256×256 patches from source images and split them into train/test sets.
-    _Note: Is not necessary for current training pipeline_
-3. Training
+The repository includes two core notebooks:
+1. Training
     - `train_aswin.ipynb`: Custom training loop with:
         - Loss functions (Brightness Loss, Gradient Loss, Histogram Loss, Adaptive Background Loss)
         - Blur augmentations
         - Mixed-precision training optimizations
-4. Inference
-    - `infer_astroswin.ipynb`: Production-ready Colab notebook for model inference.
+2. Inference preparations
+    - `trace_aswin.ipynb`: Notebook to convert torch model into onnx format
 
 ## Technical limitations
 
-### First iteration (version 0.7)
+### First iteration (version 0.7) - deprecated
 
 - Hardware: Trained on NVIDIA GTX 1660Ti Mobile (6GB)
 - Optimizations:
@@ -42,21 +36,32 @@ The repository includes five core notebooks:
     - Mixed-precision training (fp16)
     - Gradient checkpointing
     - Gradient accumulation steps = 2
+- Data:
+    - Collected using API from astrobin IOTDs and esahubble
 
 ### Second iteration (version 1.0)
 
 - Hardware: Trained on Google Colaboratory Tesla T4
 - Optimizations:
     - Mixed-precision training (fp16)
-    - Gradient checkpointing
     - Gradient accumulation steps = 4
+- Same data as on previous step
+
+### Third iteration (version 1.2+)
+
+- Hardware: Trained on Google Colaboratory Tesla T4
+- Optimizations:
+    - Mixed-precision training (fp16)
+    - Gradient accumulation steps = 4
+- Manually gathered linear HST data from MAST archive
 
 ## Training process
 
-The training pipeline consists of two major phases:
+The training pipeline consists of four major phases:
 1. **Domain Adaptaion** on noisy and heterogeneous-quality data
 2. **Fine-Tuning** on curated high-quality data
 3. **Further tuning** on _bigger_ amount of data with proper loss functions
+4. **Post-Adaptation** on linear data with a tricky autostretch preprocessing
 
 ### Stage 1: Domain Adaptation
 
@@ -109,14 +114,25 @@ The training pipeline consists of two major phases:
     - Create random combinations of blur functions
     - Set weights as follows in the training notebook: 2.0 for mixed loss of L1 and laplacian-based, 1.0 for gradient loss, 1.0 for histogram loss
 
+### Stage 4: Post-Adaptation to Autostretched Linear Data
+
+**Objective:** Adapt model to automatically stretched linear data
+**Key Adjustments:**
+- Dataset Re-gathering
+    - Manually collected around 1.5Gb of HST linear data from MAST archive
+    - Included my own images into test split to evaluate model on real examples
+- Architectural Changes:
+    - Implemented my own tiny autostretch pipeline (look further into train_aswin.ipynb)
+    - Tuned out loss functions hyperparameters
+
 ## Future work
 
-As a follow-up, I am going to parameterize model with deconvolution strength parameter.
+In the version 2.0 I am going to parameterize model with deconvolution strength parameter.
 
 ## Sources
 
-- [Dataset](https://drive.google.com/file/d/1v1HvfuoQPMprDa5FgRvjRMlwIwt5mp84/view?usp=sharing)
-- [Trained model checkpoint](https://drive.google.com/file/d/1WHKDZhAOKSegPRgYi2iFizky_14mbBht/view?usp=sharing)
+- [Dataset](https://drive.google.com/file/d/15AC-BMDLuafKRs-b9CaC3jYmi4gIkLVY/view?usp=sharing)
+- [Trained model checkpoint](https://drive.google.com/file/d/1fIMl0o0VuIjY6ltv8C3Ui-rC5psv6n6A/view?usp=sharing)
 
 ## Acknowledgments
 
